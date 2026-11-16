@@ -124,9 +124,9 @@ jobs:
       - name: Web typecheck (and the AuthorizedWorkspace brand)
         run: npm run typecheck --workspaces --if-present
 
-      # The trap named in docs/auth-implementation-plan.md and deleted in the
-      # commit that added authentication: a shared bearer secret with no
-      # subject, no expiry, no audience, no per-actor revocation and no
+      # The trap deleted in the commit that added authentication: a shared
+      # bearer secret with no subject, no expiry, no audience, no per-actor
+      # revocation and no
       # pg_stat_activity attribution. It had zero code references and existed
       # only as a temptation; this stops it coming back.
       - name: No shared-secret backdoor has been reintroduced
@@ -136,7 +136,7 @@ jobs:
           # removed. A guard that fired on its own explanation would be deleted
           # within a week, which is the failure mode that matters here.
           if grep -rnE "AGENT_RUNTIME_SECRET[[:space:]]*=|[\"']AGENT_RUNTIME_SECRET[\"']|agent_runtime_secret|X-Runtime-Secret" --include="*.py" --include="*.ts" --include="*.tsx" --include="*.yml" --include="*.example" apps packages .env.example; then
-            echo "a shared runtime secret is back; see docs/auth-implementation-plan.md Step 8"
+            echo "a shared runtime secret is back; runtime calls must carry a per-user token instead"
             exit 1
           fi
           echo "no shared runtime secret"
