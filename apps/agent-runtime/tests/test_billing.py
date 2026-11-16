@@ -22,7 +22,8 @@ Three properties run through this file:
 from __future__ import annotations
 
 import uuid
-from datetime import date, timedelta
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from decimal import Decimal
 
 import psycopg
@@ -398,6 +399,11 @@ def broadmate_state():
     _set(original)
 
 
+# The seed anchors every subscription period to the month the database was seeded, so
+# "today" must follow the clock (same default as raise_invoices); a fixed date goes stale.
+TODAY = datetime.now(ZoneInfo("Asia/Kolkata")).date()
+
+
 def _invoices(org: str) -> list[dict]:
     with psycopg.connect(SUPERUSER_DSN, row_factory=psycopg.rows.dict_row) as conn, conn.cursor() as cur:
         cur.execute("select * from core.invoices where org_id = %s::uuid order by period_start", (org,))
@@ -405,15 +411,15 @@ def _invoices(org: str) -> list[dict]:
 
 
 def test_an_active_subscription_is_invoiced_once_per_period(seller_configured):
-    first = inv.raise_invoices(today=date(2026, 9, 16))
-    second = inv.raise_invoices(today=date(2026, 9, 16))
+    first = inv.raise_invoices(today=TODAY)
+    second = inv.raise_invoices(today=TODAY)
     assert len(first["issued"]) >= 1
     assert second["considered"] == 0, "the same period was invoiced twice"
 
 
 def test_a_trial_is_not_invoiced(seller_configured):
     """Rival is trialing in the seed."""
-    inv.raise_invoices(today=date(2026, 9, 16))
+    inv.raise_invoices(today=TODAY)
     assert _invoices(ORG_RIVAL) == []
 
 
@@ -421,11 +427,11 @@ def test_the_invoice_snapshots_everything_it_names(client, seller_configured):
     make_coupon(client, pct=25)
     client.post(f"/api/workspaces/{BROADMATE_WORKSPACE}/billing/coupon",
                 json={"code": "DIWALI25"}, headers=auth(OWNER))
-    inv.raise_invoices(today=date(2026, 9, 16))
+    inv.raise_invoices(today=TODAY)
     row = _invoices(ORG_BROADMATE)[0]
 
     assert row["status"] == "issued"
-    assert row["number"] and row["number"].startswith("BMG-2026-")
+    assert row["number"] and row["number"].startswith(f"BMG-{TODAY.year}-")
     assert row["plan_name"] == "Legacy default"
     assert row["coupon_code"] == "DIWALI25" and row["percent_off"] == Decimal("25.00")
     assert row["list_price_inr"] == Decimal("15000.00")
@@ -449,7 +455,7 @@ def test_the_invoice_snapshots_everything_it_names(client, seller_configured):
 def test_a_buyer_in_another_state_is_charged_igst(seller_configured, broadmate_state):
     """The other split, exercised end to end rather than only in gst()."""
     broadmate_state("27")
-    inv.raise_invoices(today=date(2026, 9, 16))
+    inv.raise_invoices(today=TODAY)
     row = _invoices(ORG_BROADMATE)[0]
     assert row["gst_split"] == "igst"
     assert row["igst_inr"] == Decimal("2700.00")
@@ -458,7 +464,7 @@ def test_a_buyer_in_another_state_is_charged_igst(seller_configured, broadmate_s
 
 
 def test_renaming_the_plan_afterwards_does_not_rewrite_the_invoice(seller_configured):
-    inv.raise_invoices(today=date(2026, 9, 16))
+    inv.raise_invoices(today=TODAY)
     with psycopg.connect(SUPERUSER_DSN) as conn, conn.cursor() as cur:
         cur.execute("update core.plans set name = 'Renamed' where key = 'standard'")
         conn.commit()
@@ -472,7 +478,7 @@ def test_renaming_the_plan_afterwards_does_not_rewrite_the_invoice(seller_config
 
 def test_no_buyer_state_means_a_draft_with_a_reason_not_a_wrong_tax(seller_configured, broadmate_state):
     broadmate_state(None)
-    result = inv.raise_invoices(today=date(2026, 9, 16))
+    result = inv.raise_invoices(today=TODAY)
     drafts = [d for d in result["drafts"] if d["org_id"] == ORG_BROADMATE]
     assert drafts and "buyer state" in drafts[0]["reason"]
     row = _invoices(ORG_BROADMATE)[0]
@@ -486,7 +492,7 @@ def test_no_seller_registration_means_nothing_is_issued():
     from app.config import get_settings
 
     assert not get_settings().seller_gstin, "this test assumes the default (unconfigured) seller"
-    result = inv.raise_invoices(today=date(2026, 9, 16))
+    result = inv.raise_invoices(today=TODAY)
     assert result["issued"] == []
     assert all("seller" in d["reason"] for d in result["drafts"])
 
@@ -497,14 +503,14 @@ def test_a_draft_never_burns_an_invoice_number(seller_configured, broadmate_stat
     with psycopg.connect(SUPERUSER_DSN) as conn, conn.cursor() as cur:
         cur.execute("select last_value from core.invoice_numbers")
         before = cur.fetchone()[0]
-    inv.raise_invoices(today=date(2026, 9, 16))
+    inv.raise_invoices(today=TODAY)
     with psycopg.connect(SUPERUSER_DSN) as conn, conn.cursor() as cur:
         cur.execute("select last_value from core.invoice_numbers")
         assert cur.fetchone()[0] == before
 
 
 def test_owners_see_their_invoices_and_media_buyers_do_not(client, seller_configured):
-    inv.raise_invoices(today=date(2026, 9, 16))
+    inv.raise_invoices(today=TODAY)
     owner = client.get(f"/api/workspaces/{BROADMATE_WORKSPACE}/billing/invoices", headers=auth(OWNER)).json()
     buyer = client.get(f"/api/workspaces/{BROADMATE_WORKSPACE}/billing/invoices", headers=auth(MEMBER)).json()
     assert len(owner) == 1
@@ -512,7 +518,7 @@ def test_owners_see_their_invoices_and_media_buyers_do_not(client, seller_config
 
 
 def test_a_stranger_cannot_read_another_organisations_invoices(client, seller_configured):
-    inv.raise_invoices(today=date(2026, 9, 16))
+    inv.raise_invoices(today=TODAY)
     r = client.get(f"/api/workspaces/{BROADMATE_WORKSPACE}/billing/invoices", headers=auth(OUTSIDER))
     assert r.status_code == 404
 
