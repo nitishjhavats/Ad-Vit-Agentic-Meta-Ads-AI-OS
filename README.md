@@ -110,11 +110,11 @@ cd "apps/agent-runtime" && ./.venv/Scripts/python.exe -m uvicorn app.main:app --
 Interactive API docs at http://127.0.0.1:8000/docs.
 
 Every route except `/health` and `/api/brand` needs a bearer token. Sign in
-against the local Supabase to get one — the seeded owner is
-`owner@advit.local` / `owner-dev-password`:
+against the local Supabase as one of the users the local seeds create
+(`supabase/seeds/`, local fixtures only, never applied to production) to get one:
 
 ```bash
-curl -s "http://127.0.0.1:54321/auth/v1/token?grant_type=password" -H "apikey: $SUPABASE_ANON_KEY" -H "Content-Type: application/json" -d '{"email":"owner@advit.local","password":"owner-dev-password"}'
+curl -s "http://127.0.0.1:54321/auth/v1/token?grant_type=password" -H "apikey: $SUPABASE_ANON_KEY" -H "Content-Type: application/json" -d "{\"email\":\"$DEV_EMAIL\",\"password\":\"$DEV_PASSWORD\"}"
 ```
 
 ### Releasing
@@ -131,8 +131,8 @@ hostname so it can be firewalled to staff. It signs in against the same
 Supabase Auth and asks the runtime `GET /api/admin/me` on every render; a
 signed-in tenant gets the same 404 there that every `/api/admin` route gives,
 because `core.is_superadmin()` is read from the database per request and never
-from a claim. Locally, the seeded operator is `superadmin@advit.local` /
-`superadmin-dev-password` (both in `supabase/seeds/01_core.sql`).
+from a claim. Locally, sign in as the operator the local seeds create
+(`supabase/seeds/`, never applied to production).
 
 ```bash
 npm run dev:superadmin
