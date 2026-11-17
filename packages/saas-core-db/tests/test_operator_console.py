@@ -12,7 +12,8 @@ migration is, and a superuser connection does not have column grants.
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import psycopg
 import pytest
@@ -182,8 +183,10 @@ def test_as_of_cannot_move_into_the_future_or_backwards(tenant_conn):
     code, before = _a_rule(tenant_conn)
     with as_tenant(tenant_conn, SUPERADMIN), tenant_conn.cursor() as cur:
         with refused(cur, psycopg.errors.CheckViolation, "as_of_future"):
+            # The trigger checks against the IST date (see the migration). The runner is UTC, so Python
+            # date.today() + 1 is "today" in IST for 5.5 hours a day; use IST tomorrow.
             cur.execute("update t_advit.policy_rules set as_of = %s where code = %s",
-                        (date.today() + timedelta(days=1), code))
+                        (datetime.now(ZoneInfo("Asia/Kolkata")).date() + timedelta(days=1), code))
         with refused(cur, psycopg.errors.CheckViolation, "as_of_moves_forward"):
             cur.execute("update t_advit.policy_rules set as_of = %s where code = %s",
                         (before - timedelta(days=1), code))
